@@ -60,7 +60,7 @@ int parse_maps(int pid, mem_region_t *regions) {
         int major, minor, inode;
         char name[256] = "";
 
-        int n = sscanf(line, "%lx-%lx %4s %lx %d:%d %d %255[^\n]",
+        int n = sscanf(line, "%lx-%lx %4s %lx %x:%x %d %255[^\n]",
                        &start, &end, perms, &offset,
                        &major, &minor, &inode, name);
 
