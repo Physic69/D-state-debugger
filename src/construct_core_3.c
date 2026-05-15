@@ -456,45 +456,44 @@ int build_core(int pid, const char *output_path) {
                regions[i].start, regions[i].end,
                regions[i].name[0] ? regions[i].name : "(anon)");
 
-        if (lseek(mem_fd, regions[i].start, SEEK_SET) == -1) {
-            printf("seek failed, zeroing\n");
-            char zeros[4096] = {0};
-            size_t rem = seg_size;
-            while (rem > 0) {
-                size_t chunk = rem > 4096 ? 4096 : rem;
-                fwrite(zeros, chunk, 1, core);
-                rem -= chunk;
-            }
-            total_zeroed += seg_size;
-            continue;
-        }
-
-        char buf[4096];
-        size_t rem = seg_size;
-        size_t region_read = 0;
-        size_t region_zeroed = 0;
+        char          buf[4096];
+        unsigned long addr         = regions[i].start;
+        size_t        rem          = seg_size;
+        size_t        region_read  = 0;
+        size_t        region_zero  = 0;
 
         while (rem > 0) {
             size_t chunk = rem > sizeof(buf) ? sizeof(buf) : rem;
-            ssize_t n = read(mem_fd, buf, chunk);
+
+            ssize_t n = pread(mem_fd, buf, chunk, (off_t)addr);
+
             if (n <= 0) {
+                // Guard page or unmapped — zero this chunk only
                 memset(buf, 0, chunk);
                 fwrite(buf, chunk, 1, core);
-                rem -= chunk;
-                region_zeroed += chunk;
+                region_zero += chunk;
             } else {
                 fwrite(buf, n, 1, core);
-                rem -= n;
+                if ((size_t)n < chunk) {
+                    // Short read — pad remainder with zeros
+                    size_t shortfall = chunk - n;
+                    memset(buf, 0, shortfall);
+                    fwrite(buf, shortfall, 1, core);
+                    region_zero += shortfall;
+                }
                 region_read += n;
             }
+
+            addr += chunk;
+            rem  -= chunk;
         }
 
         total_dumped += region_read;
-        total_zeroed += region_zeroed;
+        total_zeroed += region_zero;
 
-        if (region_zeroed > 0) {
+        if (region_zero > 0) {
             printf("partial (%zu read, %zu zeroed)\n",
-                   region_read, region_zeroed);
+                   region_read, region_zero);
         } else {
             printf("OK (%zu bytes)\n", region_read);
         }
