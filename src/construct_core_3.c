@@ -57,10 +57,11 @@ int parse_maps(int pid, mem_region_t *regions) {
     while (fgets(line, sizeof(line), f) && count < MAX_REGIONS) {
         unsigned long start, end, offset;
         char perms[5];
-        int major, minor, inode;
+        unsigned int major, minor;
+        unsigned long inode;
         char name[256] = "";
 
-        int n = sscanf(line, "%lx-%lx %4s %lx %x:%x %d %255[^\n]",
+        int n = sscanf(line, "%lx-%lx %4s %lx %x:%x %lu %255[^\n]",
                        &start, &end, perms, &offset,
                        &major, &minor, &inode, name);
 
