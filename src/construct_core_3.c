@@ -360,8 +360,8 @@ int build_core(int pid, const char *output_path) {
     for (int i = 0; i < num_threads; i++) {
         unsigned char prstatus[336] = {0};
 
-        // pr_pid at offset 24
-        *(int *)(prstatus + 24) = threads[i].tid;
+        // pr_pid at offset 32
+        *(int *)(prstatus + 32) = threads[i].tid;
 
         // pr_reg at offset 112 (27 * 8 = 216 bytes of registers)
         memcpy(prstatus + 112, threads[i].regs, 
