@@ -45,16 +45,27 @@ typedef struct {
 // /proc parsers
 // ============================================
 
-int parse_maps(int pid, mem_region_t *regions) {
+int parse_maps(int pid, mem_region_t **regions_out) {
     char path[64];
-    sprintf(path, "/proc/%d/maps", pid);
+    snprintf(path, sizeof(path), "/proc/%d/maps", pid);
     FILE *f = fopen(path, "r");
     if (!f) { perror("Cannot read maps"); return -1; }
 
+    int cap = 256;
     int count = 0;
-    char line[512];
+    mem_region_t *regions = malloc(cap * sizeof(mem_region_t));
+    if (!regions) { fclose(f); return -1; }
 
-    while (fgets(line, sizeof(line), f) && count < MAX_REGIONS) {
+    char line[512];
+    while (fgets(line, sizeof(line), f)) {
+        if (count == cap) {
+            cap *= 2;
+            mem_region_t *tmp = realloc(regions,
+                                        cap * sizeof(mem_region_t));
+            if (!tmp) { free(regions); fclose(f); return -1; }
+            regions = tmp;
+        }
+
         unsigned long start, end, offset;
         char perms[5];
         unsigned int major, minor;
@@ -83,6 +94,7 @@ int parse_maps(int pid, mem_region_t *regions) {
     }
 
     fclose(f);
+    *regions_out = regions;
     return count;
 }
 
@@ -156,24 +168,40 @@ int read_thread_registers(int pid, int tid,
     return 0;
 }
 
-int enumerate_threads(int pid, thread_info_t *threads) {
+int enumerate_threads(int pid, thread_info_t **threads_out) {
     char path[64];
-    sprintf(path, "/proc/%d/task", pid);
+    snprintf(path, sizeof(path), "/proc/%d/task", pid);
     DIR *dir = opendir(path);
-    if (!dir) return -1;
+    if (!dir) { perror("Cannot open task dir"); return -1; }
 
+    int cap = 64;
     int count = 0;
+    thread_info_t *threads = malloc(cap * sizeof(thread_info_t));
+    if (!threads) { closedir(dir); return -1; }
+
     struct dirent *entry;
-    while ((entry = readdir(dir)) && count < MAX_THREADS) {
+    while ((entry = readdir(dir))) {
         if (entry->d_name[0] == '.') continue;
 
-        threads[count].tid = atoi(entry->d_name);
+        if (count == cap) {
+            cap *= 2;
+            thread_info_t *tmp = realloc(threads,
+                                         cap * sizeof(thread_info_t));
+            if (!tmp) { free(threads); closedir(dir); return -1; }
+            threads = tmp;
+        }
+
+        int tid = atoi(entry->d_name);
+        memset(&threads[count], 0, sizeof(thread_info_t));
+        threads[count].tid = tid;
+
         if (read_thread_registers(pid, threads[count].tid,
                                   threads[count].regs) == 0) {
             count++;
         }
     }
     closedir(dir);
+    *threads_out = threads;
     return count;
 }
 
@@ -229,16 +257,17 @@ int build_core(int pid, const char *output_path) {
     printf("Building core dump for PID %d\n\n", pid);
 
     // Parse memory regions
-    mem_region_t regions[MAX_REGIONS];
-    int num_regions = parse_maps(pid, regions);
+    mem_region_t *regions = NULL;
+    int num_regions = parse_maps(pid, &regions);
     if (num_regions < 0) return -1;
     printf("Memory regions: %d\n", num_regions);
 
     // Enumerate threads and read registers
-    thread_info_t threads[MAX_THREADS];
-    int num_threads = enumerate_threads(pid, threads);
+    thread_info_t *threads = NULL;
+    int num_threads = enumerate_threads(pid, &threads);
     if (num_threads <= 0) {
         fprintf(stderr, "No threads found\n");
+        free(regions);
         return -1;
     }
     printf("Threads: %d\n", num_threads);
@@ -261,6 +290,9 @@ int build_core(int pid, const char *output_path) {
     int mem_fd = open(mem_path, O_RDONLY);
     if (mem_fd < 0) {
         perror("Cannot open process memory (try root)");
+        free(regions);
+        free(threads);
+        free(auxv_data);
         return -1;
     }
 
@@ -303,7 +335,14 @@ int build_core(int pid, const char *output_path) {
     // ---- Write core file ----
 
     FILE *core = fopen(output_path, "wb");
-    if (!core) { perror("Cannot create output"); close(mem_fd); return -1; }
+    if (!core) {
+        perror("Cannot create output");
+        close(mem_fd);
+        free(regions);
+        free(threads);
+        free(auxv_data);
+        return -1;
+    }
 
     // ELF header
     Elf64_Ehdr ehdr;
@@ -502,6 +541,9 @@ int build_core(int pid, const char *output_path) {
 
     fclose(core);
     close(mem_fd);
+    free(regions);
+    free(threads);
+    free(auxv_data);
 
     printf("\n=== Summary ===\n");
     printf("Core dump: %s\n", output_path);
