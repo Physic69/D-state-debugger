@@ -22,6 +22,18 @@
 #define NOTE_ALIGN(sz) (((sz) + 3) & ~3)
 
 // ============================================
+// Dump level
+// ============================================
+
+typedef enum {
+    DUMP_MINIMAL,   // writable + anonymous only
+    DUMP_STANDARD,  // skip read-only file-backed (default)
+    DUMP_FULL       // everything readable
+} dump_level_t;
+
+static dump_level_t g_level = DUMP_STANDARD;
+
+// ============================================
 // Data structures
 // ============================================
 
@@ -40,6 +52,19 @@ typedef struct {
     unsigned long regs[21]; // x86_64 user_regs_struct has 27 entries
                             // but we only populate what we can get
 } thread_info_t;
+
+// ============================================
+// Region filter (dump level)
+// ============================================
+
+static int should_dump_region(const mem_region_t *r) {
+    // TODO: Implement filtering based on g_level
+    // DUMP_MINIMAL: writable + anonymous only
+    // DUMP_STANDARD: skip read-only file-backed
+    // DUMP_FULL: dump everything
+    // For now: dump everything (DUMP_FULL behavior)
+    return r->readable;
+}
 
 // ============================================
 // /proc parsers
