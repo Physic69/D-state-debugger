@@ -11,7 +11,7 @@ cvmfs_debug_rescue: src/cvmfs_debug_rescue.c
 probe_proc: src/probe_proc.c
 	$(CC) $(CFLAGS) -o $@ $<
 
-toy_fuse: src/toy_fuse.c
+toy_fuse: src/toy.c
 	$(CC) $(CFLAGS) -g $(FUSE_CFLAGS) -o $@ $< $(FUSE_LIBS) -lpthread
 
 clean:
